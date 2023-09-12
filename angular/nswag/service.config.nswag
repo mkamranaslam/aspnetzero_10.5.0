@@ -62,6 +62,7 @@
       "enumNameGeneratorType": null,
       "serviceHost": null,
       "serviceSchemes": null,
+      "withCredentials": true,
       "output": "../src/shared/service-proxies/service-proxies.ts"
     },
     "openApiToCSharpClient": {

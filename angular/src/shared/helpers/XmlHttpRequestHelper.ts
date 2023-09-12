@@ -1,5 +1,5 @@
 export class XmlHttpRequestHelper {
-    static ajax(type: string, url: string, customHeaders: any, data: any, success: any) {
+    static ajax(type: string, url: string, customHeaders: any, data: any, success: any, withCredentials: boolean = false) {
         let xhr = new XMLHttpRequest();
 
         xhr.onreadystatechange = () => {
@@ -15,6 +15,8 @@ export class XmlHttpRequestHelper {
 
         url += (url.indexOf('?') >= 0 ? '&' : '?') + 'd=' + new Date().getTime();
         xhr.open(type, url, true);
+        if(withCredentials)
+            xhr.withCredentials = withCredentials;
 
         for (let property in customHeaders) {
             if (customHeaders.hasOwnProperty(property)) {

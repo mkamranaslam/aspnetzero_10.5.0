@@ -259,7 +259,8 @@ export class AppPreBootstrap {
                 );
 
                 DynamicResourcesHelper.loadResources(callback);
-            }
+            },
+            true
         );
     }
 
