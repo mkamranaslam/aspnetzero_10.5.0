@@ -19,7 +19,9 @@ export class AppAuthService {
             () => {
                 abp.auth.clearToken();
                 abp.auth.clearRefreshToken();
-                new LocalStorageService().removeItem(AppConsts.authorization.encrptedAuthTokenName, () => {
+                var _localStorageService = new LocalStorageService()
+                _localStorageService.removeItem('Abp.AuthToken');
+                _localStorageService.removeItem(AppConsts.authorization.encrptedAuthTokenName, () => {
                     if (reload !== false) {
                         if (returnUrl) {
                             location.href = returnUrl;

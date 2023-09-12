@@ -1,4 +1,4 @@
-import { TokenService, LogService, MessageService, LocalizationService } from 'abp-ng2-module';
+﻿import { TokenService, LogService, MessageService, LocalizationService } from 'abp-ng2-module';
 import { Injectable } from '@angular/core';
 import { Router } from '@angular/router';
 import { AppConsts } from '@shared/AppConsts';
@@ -203,6 +203,15 @@ export class LoginService {
         //We are using HttpOnly Cookie now, so we will not save the accessToken from angular in cookie
         //this._tokenService.setToken(accessToken, tokenExpireDate);
 
+        //You will access this like
+        // this._localStorageService.getItem('Abp.AuthToken', function (err, value) {
+        //     var token = value.token
+        // });
+        this._localStorageService.setItem('Abp.AuthToken', 
+        {
+            token: accessToken,
+            expireDate: tokenExpireDate,
+        })
         if (refreshToken && rememberMe) {
             let refreshTokenExpireDate = rememberMe
                 ? new Date(new Date().getTime() + 1000 * refreshTokenExpireInSeconds)
