@@ -109,7 +109,8 @@ export class PayPalPurchaseComponent extends AppComponentBase implements OnInit 
                                     self._tenantRegistrationHelper.registrationResult.isActive = true;
                                 }
                                 self._router.navigate([self.redirectUrl]);
-                            }
+                            },
+                            true
                         );
                     });
                 },

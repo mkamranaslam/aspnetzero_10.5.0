@@ -1,7 +1,3 @@
-using System;
-using System.IO;
-using System.Linq;
-using System.Reflection;
 using Abp.AspNetCore;
 using Abp.AspNetCore.Configuration;
 using Abp.AspNetCore.Mvc.Antiforgery;
@@ -13,37 +9,39 @@ using Abp.Extensions;
 using Abp.Hangfire;
 using Abp.PlugIns;
 using Castle.Facilities.Logging;
-using Hangfire;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using MyCompanyName.AbpZeroTemplate.Authorization;
-using MyCompanyName.AbpZeroTemplate.Configuration;
-using MyCompanyName.AbpZeroTemplate.EntityFrameworkCore;
-using MyCompanyName.AbpZeroTemplate.Identity;
-using MyCompanyName.AbpZeroTemplate.Web.Chat.SignalR;
-using MyCompanyName.AbpZeroTemplate.Web.Common;
-using Swashbuckle.AspNetCore.Swagger;
-using MyCompanyName.AbpZeroTemplate.Web.IdentityServer;
-using MyCompanyName.AbpZeroTemplate.Web.Swagger;
-using Stripe;
-using ILoggerFactory = Microsoft.Extensions.Logging.ILoggerFactory;
 using GraphQL.Server;
 using GraphQL.Server.Ui.Playground;
+using Hangfire;
 using HealthChecks.UI.Client;
 using IdentityServer4.Configuration;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Server.Kestrel.Https;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.OpenApi.Models;
+using MyCompanyName.AbpZeroTemplate.Authorization;
+using MyCompanyName.AbpZeroTemplate.Configuration;
 using MyCompanyName.AbpZeroTemplate.Configure;
+using MyCompanyName.AbpZeroTemplate.EntityFrameworkCore;
+using MyCompanyName.AbpZeroTemplate.Identity;
 using MyCompanyName.AbpZeroTemplate.Schemas;
+using MyCompanyName.AbpZeroTemplate.Web.Chat.SignalR;
+using MyCompanyName.AbpZeroTemplate.Web.Common;
 using MyCompanyName.AbpZeroTemplate.Web.HealthCheck;
-using Newtonsoft.Json.Serialization;
+using MyCompanyName.AbpZeroTemplate.Web.IdentityServer;
+using MyCompanyName.AbpZeroTemplate.Web.Swagger;
 using Owl.reCAPTCHA;
+using Stripe;
+using System;
+using System.IO;
+using System.Linq;
+using System.Reflection;
 using HealthChecksUISettings = HealthChecks.UI.Configuration.Settings;
-using Microsoft.AspNetCore.Server.Kestrel.Https;
+using ILoggerFactory = Microsoft.Extensions.Logging.ILoggerFactory;
 
 namespace MyCompanyName.AbpZeroTemplate.Web.Startup
 {
@@ -200,6 +198,18 @@ namespace MyCompanyName.AbpZeroTemplate.Web.Startup
 
             app.UseCors(DefaultCorsPolicyName); //Enable CORS!
 
+            //Custom Middleware to access request context and assign bearer token
+            //This is done for the HttpOnly Cookie,
+            //This should come before the UseAuthentication() and UseAuthorization() middlewares
+            app.Use(async (context, next) =>
+            {
+                if (context.Request.Cookies.TryGetValue("Abp.AuthToken", out var token))
+                {
+                    context.Request.Headers.Add("Authorization", "Bearer " + token);
+                }
+                await next.Invoke();
+            });
+
             app.UseAuthentication();
             app.UseJwtTokenMiddleware();
 
@@ -262,7 +272,7 @@ namespace MyCompanyName.AbpZeroTemplate.Web.Startup
                         ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse
                     });
                 }
-                
+
                 app.ApplicationServices.GetRequiredService<IAbpAspNetCoreConfiguration>().EndpointConfiguration.ConfigureAllEndpoints(endpoints);
             });
 
@@ -308,19 +318,19 @@ namespace MyCompanyName.AbpZeroTemplate.Web.Startup
                     });
             });
         }
-        
+
         private void ConfigureSwagger(IServiceCollection services)
         {
             services.AddSwaggerGen(options =>
             {
-                options.SwaggerDoc("v1", new OpenApiInfo() {Title = "AbpZeroTemplate API", Version = "v1"});
+                options.SwaggerDoc("v1", new OpenApiInfo() { Title = "AbpZeroTemplate API", Version = "v1" });
                 options.DocInclusionPredicate((docName, description) => true);
                 options.ParameterFilter<SwaggerEnumParameterFilter>();
                 options.SchemaFilter<SwaggerEnumSchemaFilter>();
                 options.OperationFilter<SwaggerOperationIdFilter>();
                 options.OperationFilter<SwaggerOperationFilter>();
                 options.CustomDefaultSchemaIdSelector();
-                    
+
                 //add summaries to swagger
                 bool canShowSummaries = _appConfiguration.GetValue<bool>("Swagger:ShowSummaries");
                 if (canShowSummaries)

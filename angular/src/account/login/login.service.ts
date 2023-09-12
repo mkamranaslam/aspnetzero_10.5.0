@@ -200,7 +200,8 @@ export class LoginService {
     ): void {
         let tokenExpireDate = rememberMe ? new Date(new Date().getTime() + 1000 * expireInSeconds) : undefined;
 
-        this._tokenService.setToken(accessToken, tokenExpireDate);
+        //We are using HttpOnly Cookie now, so we will not save the accessToken from angular in cookie
+        //this._tokenService.setToken(accessToken, tokenExpireDate);
 
         if (refreshToken && rememberMe) {
             let refreshTokenExpireDate = rememberMe

@@ -28,7 +28,8 @@ export class AppAuthService {
                         }
                     }
                 });
-            }
+            },
+            true
         );
     }
 }

@@ -1,19 +1,11 @@
-﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations;
-using System.IdentityModel.Tokens.Jwt;
-using System.Linq;
-using System.Security.Claims;
-using System.Text;
-using System.Threading.Tasks;
-using Abp;
+﻿using Abp;
 using Abp.AspNetCore.Mvc.Authorization;
 using Abp.AspNetZeroCore.Web.Authentication.External;
 using Abp.Authorization;
 using Abp.Authorization.Users;
-using Abp.MultiTenancy;
 using Abp.Configuration;
 using Abp.Extensions;
+using Abp.MultiTenancy;
 using Abp.Net.Mail;
 using Abp.Notifications;
 using Abp.Runtime.Caching;
@@ -23,29 +15,40 @@ using Abp.Timing;
 using Abp.UI;
 using Abp.Zero.Configuration;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using MyCompanyName.AbpZeroTemplate.Authentication.TwoFactor;
 using MyCompanyName.AbpZeroTemplate.Authentication.TwoFactor.Google;
 using MyCompanyName.AbpZeroTemplate.Authorization;
 using MyCompanyName.AbpZeroTemplate.Authorization.Accounts.Dto;
-using MyCompanyName.AbpZeroTemplate.Authorization.Users;
-using MyCompanyName.AbpZeroTemplate.MultiTenancy;
-using MyCompanyName.AbpZeroTemplate.Web.Authentication.JwtBearer;
-using MyCompanyName.AbpZeroTemplate.Web.Authentication.TwoFactor;
-using MyCompanyName.AbpZeroTemplate.Web.Models.TokenAuth;
+using MyCompanyName.AbpZeroTemplate.Authorization.Delegation;
 using MyCompanyName.AbpZeroTemplate.Authorization.Impersonation;
 using MyCompanyName.AbpZeroTemplate.Authorization.Roles;
+using MyCompanyName.AbpZeroTemplate.Authorization.Users;
 using MyCompanyName.AbpZeroTemplate.Configuration;
 using MyCompanyName.AbpZeroTemplate.Identity;
+using MyCompanyName.AbpZeroTemplate.MultiTenancy;
 using MyCompanyName.AbpZeroTemplate.Net.Sms;
 using MyCompanyName.AbpZeroTemplate.Notifications;
 using MyCompanyName.AbpZeroTemplate.Security.Recaptcha;
 using MyCompanyName.AbpZeroTemplate.Web.Authentication.External;
+using MyCompanyName.AbpZeroTemplate.Web.Authentication.JwtBearer;
+using MyCompanyName.AbpZeroTemplate.Web.Authentication.TwoFactor;
 using MyCompanyName.AbpZeroTemplate.Web.Common;
-using MyCompanyName.AbpZeroTemplate.Authorization.Delegation;
+using MyCompanyName.AbpZeroTemplate.Web.Models.TokenAuth;
+using System;
+using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
+using System.IdentityModel.Tokens.Jwt;
+using System.Linq;
+using System.Security.Claims;
+using System.Text;
+using System.Threading.Tasks;
 
 namespace MyCompanyName.AbpZeroTemplate.Web.Controllers
 {
@@ -53,7 +56,7 @@ namespace MyCompanyName.AbpZeroTemplate.Web.Controllers
     public class TokenAuthController : AbpZeroTemplateControllerBase
     {
         private const string UserIdentifierClaimType = "http://aspnetzero.com/claims/useridentifier";
-
+        private const string AuthCookieName = "Abp.AuthToken";
         private readonly LogInManager _logInManager;
         private readonly ITenantCache _tenantCache;
         private readonly AbpLoginResultTypeHelper _abpLoginResultTypeHelper;
@@ -77,7 +80,7 @@ namespace MyCompanyName.AbpZeroTemplate.Web.Controllers
         private readonly AbpUserClaimsPrincipalFactory<User, Role> _claimsPrincipalFactory;
         public IRecaptchaValidator RecaptchaValidator { get; set; }
         private readonly IUserDelegationManager _userDelegationManager;
-
+        private readonly IWebHostEnvironment _hostingEnvironment;
         public TokenAuthController(
             LogInManager logInManager,
             ITenantCache tenantCache,
@@ -100,7 +103,8 @@ namespace MyCompanyName.AbpZeroTemplate.Web.Controllers
             ISettingManager settingManager,
             IJwtSecurityStampHandler securityStampHandler,
             AbpUserClaimsPrincipalFactory<User, Role> claimsPrincipalFactory,
-            IUserDelegationManager userDelegationManager)
+            IUserDelegationManager userDelegationManager,
+            IWebHostEnvironment hostingEnvironment)
         {
             _logInManager = logInManager;
             _tenantCache = tenantCache;
@@ -125,6 +129,8 @@ namespace MyCompanyName.AbpZeroTemplate.Web.Controllers
             _claimsPrincipalFactory = claimsPrincipalFactory;
             RecaptchaValidator = NullRecaptchaValidator.Instance;
             _userDelegationManager = userDelegationManager;
+            _hostingEnvironment = hostingEnvironment;
+
         }
 
         [HttpPost]
@@ -207,16 +213,41 @@ namespace MyCompanyName.AbpZeroTemplate.Web.Controllers
             var accessToken = CreateAccessToken(await CreateJwtClaims(loginResult.Identity, loginResult.User,
                 refreshTokenKey: refreshToken.key));
 
+            SetResponseAuthCookie(accessToken);
+
             return new AuthenticateResultModel
             {
                 AccessToken = accessToken,
-                ExpireInSeconds = (int) _configuration.AccessTokenExpiration.TotalSeconds,
+                ExpireInSeconds = (int)_configuration.AccessTokenExpiration.TotalSeconds,
                 RefreshToken = refreshToken.token,
-                RefreshTokenExpireInSeconds = (int) _configuration.RefreshTokenExpiration.TotalSeconds,
+                RefreshTokenExpireInSeconds = (int)_configuration.RefreshTokenExpiration.TotalSeconds,
                 EncryptedAccessToken = GetEncryptedAccessToken(accessToken),
                 TwoFactorRememberClientToken = twoFactorRememberClientToken,
                 UserId = loginResult.User.Id,
                 ReturnUrl = returnUrl
+            };
+        }
+
+        private void SetResponseAuthCookie(string accessToken)
+        {
+            HttpContext.Response.Cookies.Append(
+                AuthCookieName,
+                accessToken,
+                AuthCookieOptons(DateTimeOffset.Now.AddDays(1))
+            );
+        }
+
+        private CookieOptions AuthCookieOptons(DateTimeOffset expiry)
+        {
+            var domain = _hostingEnvironment.IsDevelopment() ? "localhost" : "your domain name";
+            return new Microsoft.AspNetCore.Http.CookieOptions
+            {
+                Expires = expiry,
+                SameSite = Microsoft.AspNetCore.Http.SameSiteMode.None,
+                Domain = domain,
+                Secure = true,
+                HttpOnly = true,
+                Path = "/"
             };
         }
 
@@ -238,7 +269,7 @@ namespace MyCompanyName.AbpZeroTemplate.Web.Controllers
                 var user = await _userManager.GetUserAsync(
                     UserIdentifier.Parse(principal.Claims.First(x => x.Type == AppConsts.UserIdentifier).Value)
                 );
-                
+
                 if (user == null)
                 {
                     throw new UserFriendlyException("Unknown user or user identifier");
@@ -251,7 +282,7 @@ namespace MyCompanyName.AbpZeroTemplate.Web.Controllers
                 return await Task.FromResult(new RefreshTokenResult(
                     accessToken,
                     GetEncryptedAccessToken(accessToken),
-                    (int) _configuration.AccessTokenExpiration.TotalSeconds)
+                    (int)_configuration.AccessTokenExpiration.TotalSeconds)
                 );
             }
             catch (UserFriendlyException)
@@ -294,6 +325,13 @@ namespace MyCompanyName.AbpZeroTemplate.Web.Controllers
                     );
                 }
             }
+
+            // Clear the cookie by setting its expiration to a past date
+            HttpContext.Response.Cookies.Append(
+                AuthCookieName,
+                "",
+                AuthCookieOptons(DateTimeOffset.Now.AddDays(-1))
+            );
         }
 
         private async Task RemoveTokenAsync(string tokenKey)
@@ -342,7 +380,7 @@ namespace MyCompanyName.AbpZeroTemplate.Web.Controllers
                 cacheKey,
                 cacheItem
             );
-            
+
             await _cacheManager.GetCache("ProviderCache").SetAsync(
                 "Provider",
                 model.Provider
@@ -359,7 +397,7 @@ namespace MyCompanyName.AbpZeroTemplate.Web.Controllers
             {
                 AccessToken = accessToken,
                 EncryptedAccessToken = GetEncryptedAccessToken(accessToken),
-                ExpireInSeconds = (int) _configuration.AccessTokenExpiration.TotalSeconds
+                ExpireInSeconds = (int)_configuration.AccessTokenExpiration.TotalSeconds
             };
         }
 
@@ -383,7 +421,7 @@ namespace MyCompanyName.AbpZeroTemplate.Web.Controllers
             {
                 AccessToken = accessToken,
                 EncryptedAccessToken = GetEncryptedAccessToken(accessToken),
-                ExpireInSeconds = (int) expiration.TotalSeconds
+                ExpireInSeconds = (int)expiration.TotalSeconds
             };
         }
 
@@ -397,7 +435,7 @@ namespace MyCompanyName.AbpZeroTemplate.Web.Controllers
             {
                 AccessToken = accessToken,
                 EncryptedAccessToken = GetEncryptedAccessToken(accessToken),
-                ExpireInSeconds = (int) _configuration.AccessTokenExpiration.TotalSeconds
+                ExpireInSeconds = (int)_configuration.AccessTokenExpiration.TotalSeconds
             };
         }
 
@@ -456,50 +494,75 @@ namespace MyCompanyName.AbpZeroTemplate.Web.Controllers
             switch (loginResult.Result)
             {
                 case AbpLoginResultType.Success:
-                {
-                    var refreshToken = CreateRefreshToken(await CreateJwtClaims(loginResult.Identity, loginResult.User,
-                        tokenType: TokenType.RefreshToken));
-                    var accessToken = CreateAccessToken(await CreateJwtClaims(loginResult.Identity, loginResult.User,
-                        refreshTokenKey: refreshToken.key));
-
-                    var returnUrl = model.ReturnUrl;
-
-                    if (model.SingleSignIn.HasValue && model.SingleSignIn.Value &&
-                        loginResult.Result == AbpLoginResultType.Success)
                     {
-                        loginResult.User.SetSignInToken();
-                        returnUrl = AddSingleSignInParametersToReturnUrl(model.ReturnUrl, loginResult.User.SignInToken,
-                            loginResult.User.Id, loginResult.User.TenantId);
-                    }
+                        var refreshToken = CreateRefreshToken(await CreateJwtClaims(loginResult.Identity, loginResult.User,
+                            tokenType: TokenType.RefreshToken));
+                        var accessToken = CreateAccessToken(await CreateJwtClaims(loginResult.Identity, loginResult.User,
+                            refreshTokenKey: refreshToken.key));
 
-                    return new ExternalAuthenticateResultModel
-                    {
-                        AccessToken = accessToken,
-                        EncryptedAccessToken = GetEncryptedAccessToken(accessToken),
-                        ExpireInSeconds = (int) _configuration.AccessTokenExpiration.TotalSeconds,
-                        ReturnUrl = returnUrl,
-                        RefreshToken = refreshToken.token,
-                        RefreshTokenExpireInSeconds = (int) _configuration.RefreshTokenExpiration.TotalSeconds
-                    };
-                }
-                case AbpLoginResultType.UnknownExternalLogin:
-                {
-                    var newUser = await RegisterExternalUserAsync(externalUser);
-                    if (!newUser.IsActive)
-                    {
+                        var returnUrl = model.ReturnUrl;
+
+                        if (model.SingleSignIn.HasValue && model.SingleSignIn.Value &&
+                            loginResult.Result == AbpLoginResultType.Success)
+                        {
+                            loginResult.User.SetSignInToken();
+                            returnUrl = AddSingleSignInParametersToReturnUrl(model.ReturnUrl, loginResult.User.SignInToken,
+                                loginResult.User.Id, loginResult.User.TenantId);
+                        }
+
                         return new ExternalAuthenticateResultModel
                         {
-                            WaitingForActivation = true
+                            AccessToken = accessToken,
+                            EncryptedAccessToken = GetEncryptedAccessToken(accessToken),
+                            ExpireInSeconds = (int)_configuration.AccessTokenExpiration.TotalSeconds,
+                            ReturnUrl = returnUrl,
+                            RefreshToken = refreshToken.token,
+                            RefreshTokenExpireInSeconds = (int)_configuration.RefreshTokenExpiration.TotalSeconds
                         };
                     }
+                case AbpLoginResultType.UnknownExternalLogin:
+                    {
+                        var newUser = await RegisterExternalUserAsync(externalUser);
+                        if (!newUser.IsActive)
+                        {
+                            return new ExternalAuthenticateResultModel
+                            {
+                                WaitingForActivation = true
+                            };
+                        }
 
-                    //Try to login again with newly registered user!
-                    loginResult = await _logInManager.LoginAsync(
-                        new UserLoginInfo(model.AuthProvider, model.ProviderKey, model.AuthProvider),
-                        GetTenancyNameOrNull()
-                    );
+                        //Try to login again with newly registered user!
+                        loginResult = await _logInManager.LoginAsync(
+                            new UserLoginInfo(model.AuthProvider, model.ProviderKey, model.AuthProvider),
+                            GetTenancyNameOrNull()
+                        );
 
-                    if (loginResult.Result != AbpLoginResultType.Success)
+                        if (loginResult.Result != AbpLoginResultType.Success)
+                        {
+                            throw _abpLoginResultTypeHelper.CreateExceptionForFailedLoginAttempt(
+                                loginResult.Result,
+                                model.ProviderKey,
+                                GetTenancyNameOrNull()
+                            );
+                        }
+
+                        var refreshToken = CreateRefreshToken(await CreateJwtClaims(loginResult.Identity,
+                            loginResult.User, tokenType: TokenType.RefreshToken)
+                        );
+
+                        var accessToken = CreateAccessToken(await CreateJwtClaims(loginResult.Identity,
+                            loginResult.User, refreshTokenKey: refreshToken.key));
+
+                        return new ExternalAuthenticateResultModel
+                        {
+                            AccessToken = accessToken,
+                            EncryptedAccessToken = GetEncryptedAccessToken(accessToken),
+                            ExpireInSeconds = (int)_configuration.AccessTokenExpiration.TotalSeconds,
+                            RefreshToken = refreshToken.token,
+                            RefreshTokenExpireInSeconds = (int)_configuration.RefreshTokenExpiration.TotalSeconds
+                        };
+                    }
+                default:
                     {
                         throw _abpLoginResultTypeHelper.CreateExceptionForFailedLoginAttempt(
                             loginResult.Result,
@@ -507,31 +570,6 @@ namespace MyCompanyName.AbpZeroTemplate.Web.Controllers
                             GetTenancyNameOrNull()
                         );
                     }
-
-                    var refreshToken = CreateRefreshToken(await CreateJwtClaims(loginResult.Identity,
-                        loginResult.User, tokenType: TokenType.RefreshToken)
-                    );
-
-                    var accessToken = CreateAccessToken(await CreateJwtClaims(loginResult.Identity,
-                        loginResult.User, refreshTokenKey: refreshToken.key));
-
-                    return new ExternalAuthenticateResultModel
-                    {
-                        AccessToken = accessToken,
-                        EncryptedAccessToken = GetEncryptedAccessToken(accessToken),
-                        ExpireInSeconds = (int) _configuration.AccessTokenExpiration.TotalSeconds,
-                        RefreshToken = refreshToken.token,
-                        RefreshTokenExpireInSeconds = (int) _configuration.RefreshTokenExpiration.TotalSeconds
-                    };
-                }
-                default:
-                {
-                    throw _abpLoginResultTypeHelper.CreateExceptionForFailedLoginAttempt(
-                        loginResult.Result,
-                        model.ProviderKey,
-                        GetTenancyNameOrNull()
-                    );
-                }
             }
         }
 
@@ -784,7 +822,7 @@ namespace MyCompanyName.AbpZeroTemplate.Web.Controllers
                 claims: claims,
                 notBefore: now,
                 signingCredentials: _configuration.SigningCredentials,
-                expires: expiration == null ? (DateTime?) null : now.Add(expiration.Value)
+                expires: expiration == null ? (DateTime?)null : now.Add(expiration.Value)
             );
 
             return new JwtSecurityTokenHandler().WriteToken(jwtSecurityToken);
